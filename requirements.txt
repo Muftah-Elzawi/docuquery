@@ -1,0 +1,12 @@
+fastapi==0.146.0
+uvicorn[standard]==0.54.0
+SQLAlchemy==2.1.5
+psycopg[binary]==3.3.6
+pgvector==0.5.1
+pydantic-settings==2.16.0
+email-validator==2.3.0
+PyJWT==2.15.1
+bcrypt==5.0.0
+pypdf==6.21.1
+httpx==0.28.1
+python-multipart==0.0.32
