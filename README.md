@@ -166,4 +166,6 @@ Technisch: mandantenfähiges RAG-Backend mit FastAPI, PostgreSQL + pgvector (HNS
 
 ---
 
+Built with AI-assisted development (Claude Code); architecture, design decisions, evaluation and review by me.
+
 Built by **Muftah Elzawi** · [LinkedIn](https://linkedin.com/in/muftah-elzawi) · MIT License
