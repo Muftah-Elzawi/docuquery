@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DocuQuery</title>
+<style>
+  :root { --bg:#f5f6f8; --card:#fff; --ink:#1c2230; --muted:#667085; --line:#e4e7ec;
+          --accent:#2f5bea; --ok:#12805c; --warn:#b54708; --bad:#c01048; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.5 system-ui, -apple-system, Segoe UI, sans-serif; background:var(--bg); color:var(--ink); }
+  header { display:flex; align-items:center; justify-content:space-between; padding:14px 24px; background:var(--card); border-bottom:1px solid var(--line); }
+  header b { font-size:17px; } header span { color:var(--muted); font-size:13px; }
+  main { max-width:1100px; margin:24px auto; padding:0 16px; display:grid; gap:20px; grid-template-columns: 1fr 1fr; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px; }
+  .wide { grid-column: 1 / -1; }
+  h2 { margin:0 0 12px; font-size:15px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  input, textarea, select { width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:7px; font:inherit; background:#fff; }
+  textarea { min-height:70px; resize:vertical; }
+  button { padding:9px 16px; border:0; border-radius:7px; background:var(--accent); color:#fff; font:inherit; font-weight:600; cursor:pointer; }
+  button.ghost { background:none; color:var(--accent); padding:4px 8px; } button:disabled { opacity:.5; cursor:wait; }
+  .row { display:flex; gap:8px; margin-top:8px; } .row > * { flex:1; } .row > button { flex:0 0 auto; }
+  .doc { border-top:1px solid var(--line); padding:10px 0; } .doc:first-child { border-top:0; }
+  .doc-head { display:flex; justify-content:space-between; gap:8px; align-items:center; }
+  .pill { font-size:12px; padding:2px 8px; border-radius:99px; background:#eef2ff; color:var(--accent); }
+  .pill.ready { background:#e7f6ef; color:var(--ok); } .pill.failed { background:#fde8ee; color:var(--bad); }
+  .fields { display:grid; grid-template-columns: max-content 1fr; gap:2px 12px; font-size:13px; margin-top:6px; color:var(--muted); }
+  .fields b { color:var(--ink); font-weight:500; }
+  .warn { color:var(--warn); font-size:13px; margin-top:4px; }
+  .answer { white-space:pre-wrap; margin:12px 0; padding:12px; background:#f8f9fc; border-radius:8px; }
+  .src { font-size:13px; border-left:3px solid var(--accent); padding:6px 10px; margin:8px 0; background:#fafbff; }
+  .src .meta { color:var(--muted); }
+  .muted { color:var(--muted); font-size:13px; }
+  .stats { display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; }
+  .stat { text-align:center; padding:10px; border:1px solid var(--line); border-radius:8px; } .stat b { display:block; font-size:22px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; } td { padding:6px 4px; border-top:1px solid var(--line); }
+  #auth { max-width:380px; margin:60px auto; } #auth .row { margin-top:12px; }
+  .err { color:var(--bad); font-size:13px; min-height:18px; margin-top:6px; }
+  [hidden] { display:none !important; }
+  @media (max-width: 760px) { main { grid-template-columns: 1fr; } .stats { grid-template-columns: repeat(2, 1fr); } }
+</style>
+</head>
+<body>
+<header><div><b>DocuQuery</b> <span>Dokumenten-Q&amp;A und Feldextraktion</span></div>
+  <div id="who" class="muted"></div></header>
+
+<section id="auth" class="card">
+  <h2 id="auth-title">Anmelden</h2>
+  <input id="ws" placeholder="Name des Workspace (z. B. Firmenname)" hidden>
+  <div class="row"><input id="email" type="email" placeholder="E-Mail"></div>
+  <div class="row"><input id="pw" type="password" placeholder="Passwort (min. 8 Zeichen)"></div>
+  <div class="row"><button id="auth-btn">Anmelden</button></div>
+  <div class="err" id="auth-err"></div>
+  <button class="ghost" id="auth-toggle">Neuen Workspace anlegen</button>
+</section>
+
+<main id="app" hidden>
+  <section class="card">
+    <h2>Dokumente</h2>
+    <div class="row"><input type="file" id="file" accept="application/pdf"><button id="upload">Hochladen</button></div>
+    <div class="err" id="up-err"></div>
+    <div id="docs" class="muted">Noch keine Dokumente.</div>
+  </section>
+
+  <section class="card">
+    <h2>Fragen</h2>
+    <textarea id="q" placeholder="z. B. Wie hoch ist der Gesamtbetrag der Rechnung RE-2026-0412?"></textarea>
+    <div class="row"><button id="ask">Fragen</button></div>
+    <div id="answer"></div>
+  </section>
+
+  <section class="card wide" id="admin" hidden>
+    <h2>Administration</h2>
+    <div class="stats" id="stats"></div>
+    <h2 style="margin-top:18px">Benutzer</h2>
+    <table id="users"></table>
+    <div class="row"><input id="nu-email" placeholder="E-Mail"><input id="nu-pw" type="password" placeholder="Passwort">
+      <select id="nu-role"><option value="member">Mitglied</option><option value="admin">Admin</option></select>
+      <button id="nu-add">Hinzufügen</button></div>
+    <div class="err" id="nu-err"></div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let token = null, me = null, registering = false;
+try { token = sessionStorage.getItem("token"); } catch {}
+
+async function api(path, opts = {}) {
+  const headers = { ...(opts.headers || {}) };
+  if (token) headers.Authorization = "Bearer " + token;
+  const res = await fetch(path, { ...opts, headers });
+  if (res.status === 401 && token) { logout(); throw new Error("Sitzung abgelaufen"); }
+  if (res.status === 204) return null;
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(typeof body.detail === "string" ? body.detail : (body.detail?.[0]?.msg || res.statusText));
+  return body;
+}
+
+function setToken(t) { token = t; try { t ? sessionStorage.setItem("token", t) : sessionStorage.removeItem("token"); } catch {} }
+function logout() { setToken(null); me = null; $("app").hidden = true; $("auth").hidden = false; $("who").textContent = ""; }
+
+$("auth-toggle").onclick = () => {
+  registering = !registering;
+  $("ws").hidden = !registering;
+  $("auth-title").textContent = $("auth-btn").textContent = registering ? "Workspace anlegen" : "Anmelden";
+  $("auth-toggle").textContent = registering ? "Ich habe schon ein Konto" : "Neuen Workspace anlegen";
+};
+
+$("auth-btn").onclick = async () => {
+  $("auth-err").textContent = "";
+  try {
+    const r = registering
+      ? await api("/api/auth/register", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ workspace_name: $("ws").value, email: $("email").value, password: $("pw").value }) })
+      : await api("/api/auth/login", { method: "POST",
+          body: new URLSearchParams({ username: $("email").value, password: $("pw").value }) });
+    setToken(r.access_token); await start();
+  } catch (e) { $("auth-err").textContent = e.message; }
+};
+
+async function start() {
+  me = await api("/api/auth/me");
+  $("who").innerHTML = `${esc(me.email)} · ${me.role === "admin" ? "Admin" : "Mitglied"} · <button class="ghost" id="logout">Abmelden</button>`;
+  $("logout").onclick = logout;
+  $("auth").hidden = true; $("app").hidden = false; $("admin").hidden = me.role !== "admin";
+  await loadDocs(); if (me.role === "admin") await loadAdmin();
+}
+
+const LABELS = { document_type:"Typ", vendor_name:"Lieferant", customer_name:"Kunde", document_number:"Nummer",
+  document_date:"Datum", due_date:"Fällig", net_amount:"Netto", tax_amount:"Steuer", gross_amount:"Brutto", currency:"Währung" };
+
+async function loadDocs() {
+  const docs = await api("/api/documents");
+  if (!docs.length) { $("docs").innerHTML = "Noch keine Dokumente."; return; }
+  $("docs").innerHTML = docs.map(d => {
+    const f = d.extracted_fields || {};
+    const rows = Object.entries(LABELS).filter(([k]) => f[k] != null).map(([k, l]) => `<span>${l}</span><b>${esc(f[k])}</b>`).join("");
+    const warns = (f.warnings || []).map(w => `<div class="warn">⚠ ${esc(w)}</div>`).join("");
+    const canDelete = me.role === "admin" || d.uploaded_by === me.id;
+    return `<div class="doc"><div class="doc-head"><span>${esc(d.filename)} <span class="muted">· ${d.pages} S.</span></span>
+      <span><span class="pill ${d.status}">${d.status}</span> ${canDelete ? `<button class="ghost" data-del="${d.id}">Löschen</button>` : ""}</span></div>
+      ${d.error ? `<div class="warn">${esc(d.error)}</div>` : ""}${rows ? `<div class="fields">${rows}</div>` : ""}${warns}</div>`;
+  }).join("");
+  document.querySelectorAll("[data-del]").forEach(b => b.onclick = async () => {
+    try { await api("/api/documents/" + b.dataset.del, { method: "DELETE" }); await loadDocs(); if (me.role === "admin") loadAdmin(); }
+    catch (e) { $("up-err").textContent = e.message; }
+  });
+}
+
+$("upload").onclick = async () => {
+  const file = $("file").files[0]; if (!file) return;
+  $("up-err").textContent = ""; $("upload").disabled = true; $("upload").textContent = "Verarbeite…";
+  const form = new FormData(); form.append("file", file);
+  try { await api("/api/documents", { method: "POST", body: form }); $("file").value = ""; await loadDocs(); if (me.role === "admin") loadAdmin(); }
+  catch (e) { $("up-err").textContent = e.message; }
+  finally { $("upload").disabled = false; $("upload").textContent = "Hochladen"; }
+};
+
+$("ask").onclick = async () => {
+  const question = $("q").value.trim(); if (question.length < 3) return;
+  $("ask").disabled = true; $("answer").innerHTML = '<p class="muted">Suche in den Dokumenten…</p>';
+  try {
+    const r = await api("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question }) });
+    $("answer").innerHTML = `<div class="answer">${esc(r.answer)}</div>` + r.sources.map(s =>
+      `<div class="src"><div class="meta">[${s.number}] ${esc(s.filename)} · Seite ${s.page} · Ähnlichkeit ${s.similarity}</div>${esc(s.excerpt)}</div>`).join("");
+  } catch (e) { $("answer").innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+  finally { $("ask").disabled = false; }
+};
+
+async function loadAdmin() {
+  const [s, users] = await Promise.all([api("/api/admin/stats"), api("/api/admin/users")]);
+  $("stats").innerHTML = [["Benutzer", s.users], ["Dokumente", s.documents], ["Chunks", s.chunks], ["Fehlgeschlagen", s.failed_documents]]
+    .map(([l, v]) => `<div class="stat"><b>${v}</b><span class="muted">${l}</span></div>`).join("");
+  $("users").innerHTML = users.map(u => `<tr><td>${esc(u.email)}</td><td>${u.role === "admin" ? "Admin" : "Mitglied"}</td>
+    <td style="text-align:right">${u.id === me.id ? '<span class="muted">Sie</span>' : `<button class="ghost" data-udel="${u.id}">Entfernen</button>`}</td></tr>`).join("");
+  document.querySelectorAll("[data-udel]").forEach(b => b.onclick = async () => { await api("/api/admin/users/" + b.dataset.udel, { method: "DELETE" }); loadAdmin(); });
+}
+
+$("nu-add").onclick = async () => {
+  $("nu-err").textContent = "";
+  try {
+    await api("/api/admin/users", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: $("nu-email").value, password: $("nu-pw").value, role: $("nu-role").value }) });
+    $("nu-email").value = $("nu-pw").value = ""; loadAdmin();
+  } catch (e) { $("nu-err").textContent = e.message; }
+};
+
+if (token) start().catch(logout);
+</script>
+</body>
+</html>
