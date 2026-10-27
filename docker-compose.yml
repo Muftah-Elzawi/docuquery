@@ -1,0 +1,48 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: docuquery
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d docuquery"]
+      interval: 3s
+      retries: 20
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama:/root/.ollama
+
+  # One-off job: downloads the two models on first start (cached in the volume afterwards).
+  ollama-pull:
+    image: ollama/ollama:latest
+    depends_on: [ollama]
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c", "sleep 3 && ollama pull nomic-embed-text && ollama pull llama3.2"]
+    volumes:
+      - ollama:/root/.ollama
+
+  api:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+      ollama-pull:
+        condition: service_completed_successfully
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://app:app@db:5432/docuquery
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://ollama:11434/v1}
+    ports:
+      - "8000:8000"
+
+volumes:
+  pgdata:
+  ollama:
